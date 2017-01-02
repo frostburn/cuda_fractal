@@ -176,14 +176,9 @@ void accumulate_cpu(
 
             int x_idx = x_sqr * width;
             int y_idx = y_sqr * height;
-            if (x_idx >= 0 && x_idx < width && y_idx >= 0 && y_idx < height) {
-                if (x_idx == 0 && y_idx == 0) {
-                    // Find out why this accumulates spurious samples.
-                }
-                else {
-                    #pragma omp atomic
-                    h_img[x_idx + width * y_idx]++;
-                }
+            if (x_sqr >= 0 && x_idx < width && y_sqr >= 0 && y_idx < height) {
+                #pragma omp atomic
+                h_img[x_idx + width * y_idx]++;
             }
         }
     }
@@ -247,18 +242,13 @@ void accumulate(
 
             int x_idx = x_sqr * width;
             int y_idx = y_sqr * height;
-            if (x_idx >= 0 && x_idx < width && y_idx >= 0 && y_idx < height) {
-                if (x_idx == 0 && y_idx == 0) {
-                    // Find out why this accumulates spurious samples.
-                }
-                else {
-                    // d_img[x_idx + WIDTH * y_idx]++;
-                    #ifdef DOUBLE_PREC
-                        atomicAddDouble(d_img + (x_idx + width * y_idx), 1.0);
-                    #else
-                        atomicAdd(d_img + (x_idx + width * y_idx), 1.0);
-                    #endif
-                }
+            if (x_sqr >= 0 && x_idx < width && y_sqr >= 0 && y_idx < height) {
+                // d_img[x_idx + WIDTH * y_idx]++;
+                #ifdef DOUBLE_PREC
+                    atomicAddDouble(d_img + (x_idx + width * y_idx), 1.0);
+                #else
+                    atomicAdd(d_img + (x_idx + width * y_idx), 1.0);
+                #endif
             }
         }
     }
@@ -285,24 +275,63 @@ int main(int argc, char **argv)
     real proj_yx = 0;
     real proj_yy = 0.3;
 
-    if (argc > 1) {
-        launches = atoi(argv[1]);
+    int c = 1;
+    if (argc > c) {
+        launches = atoi(argv[c]);
     }
-    if (argc > 2) {
-        width = atoi(argv[2]);
+    c++;
+    if (argc > c) {
+        width = atoi(argv[c]);
     }
-    if (argc > 3) {
-        height = atoi(argv[3]);
+    c++;
+    if (argc > c) {
+        height = atoi(argv[c]);
     }
-    if (argc > 4) {
-        iterations = atoi(argv[4]);
+    c++;
+    if (argc > c) {
+        iterations = atoi(argv[c]);
     }
-    if (argc > 5) {
-        spot_x = atof(argv[5]);
+    c++;
+    if (argc > c) {
+        spot_x = atof(argv[c]);
     }
-    if (argc > 6) {
-        spot_y = atof(argv[6]);
+    c++;
+    if (argc > c) {
+        spot_y = atof(argv[c]);
     }
+    c++;
+    if (argc > c) {
+        spot_scale_x = atof(argv[c]);
+    }
+    c++;
+    if (argc > c) {
+        spot_scale_y = atof(argv[c]);
+    }
+    c++;
+    if (argc > c) {
+        center_x = atof(argv[c]);
+    }
+    c++;
+    if (argc > c) {
+        center_y = atof(argv[c]);
+    }
+    c++;
+    if (argc > c) {
+        proj_xx = atof(argv[c]);
+    }
+    c++;
+    if (argc > c) {
+        proj_xy = atof(argv[c]);
+    }
+    c++;
+    if (argc > c) {
+        proj_yx = atof(argv[c]);
+    }
+    c++;
+    if (argc > c) {
+        proj_yy = atof(argv[c]);
+    }
+    c++;
 
     int num_bins = width * height;
     int img_size = num_bins * sizeof(real);
@@ -346,11 +375,13 @@ int main(int argc, char **argv)
         base_seed = devrand();
         accumulate_cpu(
             h_img_2,
+            width, height,
+            iterations,
             spot_x, spot_y,
             spot_scale_x, spot_scale_y,
             center_x, center_y,
             proj_xx, proj_xy, proj_yx, proj_yy,
-            ITERATIONS, samples,
+            samples,
             base_seed
         );
     }
@@ -363,12 +394,19 @@ int main(int argc, char **argv)
         h_img[i] += h_img_2[i];
     }
 
+    // fprintf(stderr, "Dumbing to stdout.\n");
+#ifdef EVAL_API
     // Text based eval API is bestest.
     printf("array([");
     for (int i = 0; i < num_bins; i++) {
         printf("%g,", h_img[i]);
     }
     printf("])\n");
+#else
+    write(fileno(stdout), h_img, img_size);
+#endif
+    //fprintf(stderr, "Dump complete.\n");
+
     free(h_img);
     free(h_img_2);
     cudaFree(d_img);
