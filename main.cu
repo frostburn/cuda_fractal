@@ -201,10 +201,10 @@ void accumulate(
     jkiss *jk = &jk_;
     jkiss_init(jk, threadIdx.x, blockIdx.x, base_seed);
     for (size_t j = 0; j < samples; j++) {
-        real x = 0;
-        real y = 0;
         real cx = jkiss_gauss(jk) * spot_scale_x + spot_x;
         real cy = jkiss_gauss(jk) * spot_scale_y + spot_y;
+        real x = cx;
+        real y = cy;
         size_t i = 0;
         for (i = 0; i < iterations; i++) {
             real x_sqr = x * x;
@@ -219,17 +219,14 @@ void accumulate(
             continue;
         }
         // Only escaping samples are used in a buddhabrot.
-        x = 0;
-        y = 0;
+        x = cx;
+        y = cy;
         for (size_t k = 0; k < i; k++) {
             real x_sqr = x * x;
             real y_sqr = y * y;
             y = 2*x*y + cy;
             x = x_sqr - y_sqr + cx;
 
-            if (k == 0) {
-                continue;
-            }
             x_sqr = x - center_x;
             y_sqr = y - center_y;
             real temp = x_sqr;
@@ -243,17 +240,45 @@ void accumulate(
             int x_idx = x_sqr * width;
             int y_idx = y_sqr * height;
             if (x_sqr >= 0 && x_idx < width && y_sqr >= 0 && y_idx < height) {
-                // d_img[x_idx + WIDTH * y_idx]++;
+                real red_val = 0;
+                real green_val = 0;
+                real blue_val = 0;
+
+                red_val += 1.0 / (k + 1.0);
+                green_val += 1000.0 / (k*k + 10000.0);
+                blue_val += 10000.0 / (k*k + 200000.0);
+
+                if (k % 3 == 0) {
+                    red_val += 0.1;
+                    blue_val += 0.1;
+                }
+                else if (k % 3 == 1) {
+                    red_val += 0.1;
+                    green_val += 0.1;
+                }
+                else {
+                    green_val += 0.1;
+                    blue_val += 0.1;
+                }
+
+                real *pixel = d_img + 3 * (x_idx + width * y_idx);
+                real *red = pixel;
+                real *green = pixel + 1;
+                real *blue = pixel + 2;
                 #ifdef DOUBLE_PREC
                     atomicAddDouble(d_img + (x_idx + width * y_idx), 1.0);
                 #else
-                    atomicAdd(d_img + (x_idx + width * y_idx), 1.0);
+                    atomicAdd(red, red_val);
+                    atomicAdd(green, green_val);
+                    atomicAdd(blue, blue_val);
                 #endif
             }
         }
     }
     __syncthreads();
 }
+
+#define NUM_COLORS (3)
 
 int main(int argc, char **argv)
 {
@@ -333,7 +358,7 @@ int main(int argc, char **argv)
     }
     c++;
 
-    int num_bins = width * height;
+    int num_bins = width * height * NUM_COLORS;
     int img_size = num_bins * sizeof(real);
     real *h_img = (real *)malloc(img_size);
     real *h_img_2 = (real *)malloc(img_size);
@@ -364,6 +389,7 @@ int main(int argc, char **argv)
 
 // Parallel CPU/GPU disabled for single precission as the sample factor is too large to be useful.
 #ifdef DOUBLE_PREC
+    Cpu processing and thus double precission deprecated for the time being.
     #pragma omp parallel
     {
         size_t samples = launches * BLOCKS_PER_LAUNCH * THREADS_PER_BLOCK * SAMPLES_PER_THREAD;
